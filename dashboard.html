@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ExamPortal — DoS Live Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:      #080c14;
+  --panel:   #0d1220;
+  --border:  #1c2540;
+  --green:   #00e676;
+  --red:     #ff1744;
+  --yellow:  #ffd600;
+  --blue:    #2979ff;
+  --purple:  #d500f9;
+  --text:    #bac8e8;
+  --dim:     #2e3a5a;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Sora',sans-serif;
+  min-height:100vh;
+  padding:1.2rem;
+  overflow-x:hidden;
+}
+
+/* scanline */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.06) 3px,rgba(0,0,0,.06) 4px);
+}
+
+/* ── Header ── */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--border);padding-bottom:1rem;margin-bottom:1.2rem;
+  flex-wrap:wrap;gap:.8rem;
+}
+.logo{font-family:'Space Mono',monospace;font-weight:700;font-size:1.1rem;letter-spacing:2px}
+.logo em{color:var(--red);font-style:normal}
+.badges{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+.pill{
+  font-family:'Space Mono',monospace;font-size:.65rem;letter-spacing:1.5px;
+  padding:.28rem .75rem;border-radius:2px;border:1px solid;white-space:nowrap;
+}
+.pill-safe  {border-color:var(--green);color:var(--green)}
+.pill-flash {border-color:var(--yellow);color:var(--yellow);animation:blink 1.2s step-end infinite}
+.pill-attack{border-color:var(--red);color:var(--red);animation:blink .7s step-end infinite}
+.pill-def   {border-color:var(--blue);color:var(--blue)}
+@keyframes blink{50%{opacity:.15}}
+
+/* ── Phase banner ── */
+.phase-banner{
+  border-radius:6px;padding:.75rem 1.4rem;margin-bottom:1.2rem;
+  font-family:'Space Mono',monospace;font-size:.95rem;letter-spacing:2px;
+  text-align:center;font-weight:700;transition:all .4s;
+}
+.phase-normal {background:#00e67610;border:1px solid var(--green);color:var(--green)}
+.phase-flash  {background:#ffd60018;border:1px solid var(--yellow);color:var(--yellow)}
+.phase-attack {background:#ff174418;border:1px solid var(--red);color:var(--red);animation:blink .8s step-end infinite}
+
+/* ── Controls ── */
+.controls{display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:1.2rem}
+button{
+  font-family:'Space Mono',monospace;font-size:.7rem;letter-spacing:1.5px;
+  padding:.5rem 1rem;border-radius:3px;border:1px solid;cursor:pointer;
+  background:transparent;transition:all .18s;text-transform:uppercase;
+}
+.btn-g{border-color:var(--green);color:var(--green)}   .btn-g:hover{background:var(--green);color:var(--bg)}
+.btn-r{border-color:var(--red);color:var(--red)}       .btn-r:hover{background:var(--red);color:#fff}
+.btn-b{border-color:var(--blue);color:var(--blue)}     .btn-b:hover{background:var(--blue);color:#fff}
+.btn-y{border-color:var(--yellow);color:var(--yellow)} .btn-y:hover{background:var(--yellow);color:var(--bg)}
+
+/* ── KPI grid ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:.9rem;margin-bottom:1.2rem}
+@media(max-width:1000px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:600px) {.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+.kpi{
+  background:var(--panel);border:1px solid var(--border);border-radius:6px;
+  padding:1rem 1.2rem;position:relative;overflow:hidden;
+}
+.kpi::before{
+  content:'';position:absolute;top:0;left:0;width:100%;height:3px;
+  background:var(--c,var(--green));
+}
+.kpi-label{font-size:.6rem;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:.4rem}
+.kpi-value{
+  font-family:'Space Mono',monospace;font-size:1.9rem;font-weight:700;
+  color:var(--c,var(--green));text-shadow:0 0 18px var(--c,var(--green));
+  line-height:1;transition:all .3s;
+}
+.kpi-sub{font-size:.65rem;color:var(--dim);margin-top:.35rem}
+
+/* ── Charts ── */
+.chart-row{display:grid;grid-template-columns:3fr 1fr;gap:.9rem;margin-bottom:1.2rem}
+@media(max-width:800px){.chart-row{grid-template-columns:1fr}}
+.chart-panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:1rem 1.2rem}
+.chart-title{font-size:.62rem;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:.8rem}
+canvas{max-height:190px}
+
+/* ── Bottom row ── */
+.bottom-row{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
+@media(max-width:700px){.bottom-row{grid-template-columns:1fr}}
+
+/* ── Log ── */
+.log-panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:1rem 1.2rem}
+.log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem}
+.log-scroll{height:160px;overflow-y:auto;font-family:'Space Mono',monospace;font-size:.68rem;line-height:1.8}
+.log-scroll::-webkit-scrollbar{width:3px}
+.log-scroll::-webkit-scrollbar-thumb{background:var(--border)}
+.entry{animation:fadeIn .25s}
+.entry.ok    {color:#5affa5}
+.entry.warn  {color:var(--yellow)}
+.entry.atk   {color:var(--red)}
+.entry.def   {color:var(--blue)}
+.entry.info  {color:var(--text)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(3px)}}
+
+/* ── Comparison table ── */
+.cmp-panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:1rem 1.2rem}
+table.cmp{width:100%;border-collapse:collapse;font-size:.75rem}
+table.cmp th,table.cmp td{padding:.5rem .7rem;border-bottom:1px solid var(--border);text-align:left}
+table.cmp th{color:var(--dim);font-size:.6rem;letter-spacing:1.5px;text-transform:uppercase;font-weight:400}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
+
+/* ── Statusbar ── */
+.statusbar{
+  display:flex;justify-content:space-between;align-items:center;
+  border:1px solid var(--border);border-radius:6px;padding:.6rem 1.2rem;
+  margin-top:1rem;flex-wrap:wrap;gap:.5rem;
+  font-family:'Space Mono',monospace;font-size:.62rem;color:var(--dim);
+}
+.statusbar span{color:var(--text)}
+
+.glow{animation:glow 1s ease-in-out infinite alternate}
+@keyframes glow{from{text-shadow:0 0 8px var(--red)}to{text-shadow:0 0 28px var(--red),0 0 56px var(--red)}}
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">🎓 ExamPortal &nbsp;<em>DoS Monitor</em></div>
+  <div class="badges">
+    <div class="pill pill-safe">● LOCAL DEMO</div>
+    <div class="pill pill-flash" id="lbl-flash" style="display:none">📚 FLASH CROWD</div>
+    <div class="pill pill-attack" id="lbl-attack" style="display:none">⚡ UNDER ATTACK</div>
+    <div class="pill pill-def"   id="lbl-def"    style="display:none">🛡 DEFENSE ON</div>
+  </div>
+</header>
+
+<!-- ── Phase banner ── -->
+<div class="phase-banner phase-normal" id="phaseBanner">✅ PHASE 1 — NORMAL OPERATION</div>
+
+<!-- ── Controls ── -->
+<div class="controls">
+  <button class="btn-b" onclick="toggleDefense()">🛡 TOGGLE DEFENSE (RATE LIMIT)</button>
+  <button class="btn-y" onclick="resetAll()">↺ RESET ALL</button>
+  <button class="btn-g" onclick="window.open('http://127.0.0.1:5000/download','_blank')">📥 OPEN DOWNLOAD PAGE</button>
+  <button class="btn-g" onclick="window.open('http://127.0.0.1:5000','_blank')">🌐 OPEN PORTAL</button>
+</div>
+
+<!-- ── KPIs ── -->
+<div class="kpi-grid">
+  <div class="kpi" style="--c:var(--blue)">
+    <div class="kpi-label">Total Requests</div>
+    <div class="kpi-value" id="kTotal">0</div>
+    <div class="kpi-sub">all traffic</div>
+  </div>
+  <div class="kpi" style="--c:var(--red)">
+    <div class="kpi-label">Requests / Sec</div>
+    <div class="kpi-value" id="kRPS">0</div>
+    <div class="kpi-sub">current load</div>
+  </div>
+  <div class="kpi" style="--c:var(--green)">
+    <div class="kpi-label">Students Served</div>
+    <div class="kpi-value" id="kStudents">0</div>
+    <div class="kpi-sub">legitimate users</div>
+  </div>
+  <div class="kpi" style="--c:var(--red)">
+    <div class="kpi-label">Attacker Requests</div>
+    <div class="kpi-value" id="kAttackers">0</div>
+    <div class="kpi-sub">malicious traffic</div>
+  </div>
+  <div class="kpi" style="--c:var(--yellow)">
+    <div class="kpi-label">Blocked (429)</div>
+    <div class="kpi-value" id="kBlocked">0</div>
+    <div class="kpi-sub">rate limited</div>
+  </div>
+</div>
+
+<!-- ── Charts ── -->
+<div class="chart-row">
+  <div class="chart-panel">
+    <div class="chart-title">▶ REQUESTS PER SECOND + AVG RESPONSE TIME — LIVE</div>
+    <canvas id="rpsChart"></canvas>
+  </div>
+  <div class="chart-panel">
+    <div class="chart-title">▶ TRAFFIC MIX</div>
+    <canvas id="donut"></canvas>
+  </div>
+</div>
+
+<!-- ── Bottom row ── -->
+<div class="bottom-row">
+  <!-- Live log -->
+  <div class="log-panel">
+    <div class="log-head">
+      <div class="chart-title" style="margin:0">▶ LIVE EVENT LOG</div>
+      <button class="btn-r" style="padding:.2rem .6rem;font-size:.6rem" onclick="clearLog()">CLEAR</button>
+    </div>
+    <div class="log-scroll" id="logBox"></div>
+  </div>
+
+  <!-- Comparison table -->
+  <div class="cmp-panel">
+    <div class="chart-title">▶ PHASE COMPARISON</div>
+    <table class="cmp">
+      <tr>
+        <th>Phase</th><th>RPS</th><th>Avg Resp</th><th>Impact</th>
+      </tr>
+      <tr id="row-normal">
+        <td><span class="dot" style="background:var(--green)"></span>Normal</td>
+        <td id="cmp-n-rps">—</td>
+        <td id="cmp-n-ms">—</td>
+        <td style="color:var(--green)">✔ Fast</td>
+      </tr>
+      <tr id="row-flash">
+        <td><span class="dot" style="background:var(--yellow)"></span>Flash Crowd</td>
+        <td id="cmp-f-rps">—</td>
+        <td id="cmp-f-ms">—</td>
+        <td style="color:var(--yellow)" id="cmp-f-impact">—</td>
+      </tr>
+      <tr id="row-attack">
+        <td><span class="dot" style="background:var(--red)"></span>DoS Attack</td>
+        <td id="cmp-a-rps">—</td>
+        <td id="cmp-a-ms">—</td>
+        <td style="color:var(--red)" id="cmp-a-impact">—</td>
+      </tr>
+      <tr id="row-defense" style="display:none">
+        <td><span class="dot" style="background:var(--blue)"></span>+ Defense</td>
+        <td id="cmp-d-rps">—</td>
+        <td id="cmp-d-ms">—</td>
+        <td style="color:var(--blue)">🛡 Stable</td>
+      </tr>
+    </table>
+    <div style="margin-top:1rem;font-size:.68rem;color:var(--dim);line-height:1.8">
+      <div style="margin-bottom:.4rem;color:var(--text);font-size:.7rem;font-weight:600">Current Phase:</div>
+      <div id="phaseDesc">Server running normally. No significant load detected.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Status bar ── -->
+<div class="statusbar">
+  <div>TARGET <span>127.0.0.1:5000</span></div>
+  <div>ELAPSED <span id="sElapsed">0s</span></div>
+  <div>AVG RESP <span id="sAvgMs">—</span></div>
+  <div>DEFENSE <span id="sDefense">OFF</span></div>
+  <div>PHASE <span id="sPhase">NORMAL</span></div>
+  <div style="color:var(--green)">● MONITOR LIVE</div>
+</div>
+
+<script>
+const API = "http://127.0.0.1:5000";
+let prevTotal = 0, prevPhase = null, prevDefense = null;
+let snapshots = { normal:null, flash:null, attack:null, defense:null };
+
+// ── Chart.js ────────────────────────────────────────────────────────────────
+const rpsCtx = document.getElementById("rpsChart").getContext("2d");
+const rpsChart = new Chart(rpsCtx, {
+  type: "line",
+  data: {
+    labels: [],
+    datasets: [
+      {
+        label: "RPS",
+        data: [],
+        borderColor: "#ff1744",
+        backgroundColor: "rgba(255,23,68,.07)",
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        yAxisID: "y",
+      },
+      {
+        label: "Avg Response (ms)",
+        data: [],
+        borderColor: "#ffd600",
+        backgroundColor: "transparent",
+        borderWidth: 1.5,
+        borderDash: [4,3],
+        tension: 0.4,
+        pointRadius: 0,
+        yAxisID: "y2",
+      }
+    ]
+  },
+  options: {
+    animation: false,
+    interaction: { mode:"index", intersect:false },
+    plugins: {
+      legend: {
+        labels: { color:"#2e3a5a", font:{ family:"Space Mono", size:10 } }
+      }
+    },
+    scales: {
+      x: { display:false },
+      y: {
+        beginAtZero:true,
+        grid: { color:"#1c2540" },
+        ticks: { color:"#2e3a5a", font:{ family:"Space Mono", size:10 } },
+        title: { display:true, text:"RPS", color:"#ff1744", font:{ size:10 } }
+      },
+      y2: {
+        position:"right",
+        beginAtZero:true,
+        grid: { drawOnChartArea:false },
+        ticks: { color:"#2e3a5a", font:{ family:"Space Mono", size:10 } },
+        title: { display:true, text:"ms", color:"#ffd600", font:{ size:10 } }
+      }
+    }
+  }
+});
+
+const donutCtx = document.getElementById("donut").getContext("2d");
+const donut = new Chart(donutCtx, {
+  type: "doughnut",
+  data: {
+    labels: ["Students", "Attackers", "Blocked"],
+    datasets: [{
+      data: [1,0,0],
+      backgroundColor: ["#00e676","#ff1744","#ffd600"],
+      borderColor: "#0d1220",
+      borderWidth: 3,
+    }]
+  },
+  options: {
+    cutout: "68%",
+    plugins: {
+      legend: {
+        position:"bottom",
+        labels:{ color:"#2e3a5a", font:{ family:"Space Mono", size:10 }, padding:10 }
+      }
+    }
+  }
+});
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function addLog(msg, cls="info"){
+  const box = document.getElementById("logBox");
+  const ts  = new Date().toLocaleTimeString();
+  const d   = document.createElement("div");
+  d.className = "entry " + cls;
+  d.textContent = `[${ts}]  ${msg}`;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+  while(box.children.length > 300) box.removeChild(box.firstChild);
+}
+function clearLog(){ document.getElementById("logBox").innerHTML=""; }
+
+// ── Main poll ────────────────────────────────────────────────────────────────
+async function poll(){
+  let d;
+  try{
+    const r = await fetch(`${API}/stats`,{cache:"no-store"});
+    d = await r.json();
+  } catch(e){
+    addLog("⚠ Server unreachable — make sure server.py is running AND you opened this via http://localhost:8080","warn");
+    return;
+  }
+
+  const { phase, defense, total, students, attackers, blocked, elapsed, rps, avg_ms, history } = d;
+
+  // KPIs
+  document.getElementById("kTotal").textContent    = total.toLocaleString();
+  document.getElementById("kRPS").textContent      = rps;
+  document.getElementById("kStudents").textContent = students.toLocaleString();
+  document.getElementById("kAttackers").textContent= attackers.toLocaleString();
+  document.getElementById("kBlocked").textContent  = blocked.toLocaleString();
+
+  // RPS glow
+  document.getElementById("kRPS").classList.toggle("glow", rps > 60);
+
+  // Status bar
+  document.getElementById("sElapsed").textContent = elapsed + "s";
+  document.getElementById("sAvgMs").textContent   = avg_ms + "ms";
+  document.getElementById("sDefense").textContent  = defense ? "ON ✔" : "OFF";
+  document.getElementById("sPhase").textContent    = phase.toUpperCase();
+
+  // Phase banner & badges
+  updatePhase(phase, rps, avg_ms, defense);
+
+  // Defense change
+  if(prevDefense !== null && prevDefense !== defense){
+    addLog(defense ? "🛡 DEFENSE ON — rate limiting activated" : "⚠ DEFENSE OFF — server unprotected", defense?"def":"warn");
+    if(defense && phase==="attack") snapshots.defense = {rps, avg_ms};
+  }
+  prevDefense = defense;
+
+  // Phase change
+  if(prevPhase !== null && prevPhase !== phase){
+    if(!snapshots[phase]) snapshots[phase] = {rps, avg_ms};
+    addLog(`↳ Phase changed to: ${phase.toUpperCase()}`, phase==="attack"?"atk":phase==="flash"?"warn":"ok");
+  }
+  prevPhase = phase;
+
+  // Log new requests
+  const newReqs = total - prevTotal;
+  if(newReqs > 0 && newReqs < 1000){
+    const cls = phase==="attack" ? "atk" : phase==="flash" ? "warn" : "ok";
+    addLog(`+${newReqs} requests  [total:${total.toLocaleString()}  rps:${rps}  avgResp:${avg_ms}ms]`, cls);
+  } else if(newReqs >= 1000){
+    addLog(`⚡ FLOOD: +${newReqs} requests in 1s — server overwhelmed!`, "atk");
+  }
+  prevTotal = total;
+
+  // Charts
+  rpsChart.data.labels = history.map(h=>h.t+"s");
+  rpsChart.data.datasets[0].data = history.map(h=>h.rps);
+  rpsChart.data.datasets[1].data = history.map(h=>h.avg_ms);
+  rpsChart.update("none");
+
+  const failed = Math.max(total - students - blocked, 0);
+  donut.data.datasets[0].data = [Math.max(students,0), Math.max(attackers,0), Math.max(blocked,0)];
+  donut.update("none");
+
+  // Comparison table
+  updateTable(phase, rps, avg_ms);
+}
+
+function updatePhase(phase, rps, avg_ms, defense){
+  const banner = document.getElementById("phaseBanner");
+  banner.className = "phase-banner";
+
+  document.getElementById("lbl-flash").style.display  = phase==="flash" ? "inline-flex":"none";
+  document.getElementById("lbl-attack").style.display = phase==="attack"? "inline-flex":"none";
+  document.getElementById("lbl-def").style.display    = defense         ? "inline-flex":"none";
+
+  const desc = document.getElementById("phaseDesc");
+
+  if(phase==="normal"){
+    banner.classList.add("phase-normal");
+    banner.textContent = "✅ PHASE 1 — NORMAL OPERATION";
+    desc.textContent   = "Server running normally. Few users, fast responses under 100ms.";
+  } else if(phase==="flash"){
+    banner.classList.add("phase-flash");
+    banner.textContent = "📚 PHASE 2 — FLASH CROWD (Legitimate Overload)";
+    desc.textContent   = "Many real students downloading the paper simultaneously. Not malicious — but still causing slowdown.";
+  } else if(phase==="attack"){
+    banner.classList.add("phase-attack");
+    banner.textContent = defense
+      ? "🛡 PHASE 3 (DEFENSE ON) — Attack Being Absorbed"
+      : "⚡ PHASE 3 — DoS ATTACK IN PROGRESS";
+    desc.textContent = defense
+      ? "Rate limiting is blocking attacker IPs. Server stabilizing."
+      : "Malicious traffic on top of flash crowd. Server overwhelmed. Students cannot access portal.";
+  }
+}
+
+function updateTable(phase, rps, avg_ms){
+  if(phase==="normal" && !snapshots.normal)       snapshots.normal  = {rps, avg_ms};
+  if(phase==="flash"  && !snapshots.flash)        snapshots.flash   = {rps, avg_ms};
+  if(phase==="attack" && !snapshots.attack && rps>20) snapshots.attack = {rps, avg_ms};
+
+  const fill = (idRps, idMs, snap) => {
+    if(!snap) return;
+    document.getElementById(idRps).textContent = snap.rps + "/s";
+    document.getElementById(idMs).textContent  = snap.avg_ms + "ms";
+  };
+  fill("cmp-n-rps","cmp-n-ms", snapshots.normal);
+  fill("cmp-f-rps","cmp-f-ms", snapshots.flash);
+  fill("cmp-a-rps","cmp-a-ms", snapshots.attack);
+  fill("cmp-d-rps","cmp-d-ms", snapshots.defense);
+
+  if(snapshots.flash)   {
+    const ms = snapshots.flash.avg_ms;
+    document.getElementById("cmp-f-impact").textContent = ms>400 ? "⚠ Slow" : "≈ Moderate";
+  }
+  if(snapshots.attack)  document.getElementById("cmp-a-impact").textContent = "✗ Overwhelmed";
+  document.getElementById("row-defense").style.display = snapshots.defense ? "table-row":"none";
+}
+
+// ── Buttons ──────────────────────────────────────────────────────────────────
+async function toggleDefense(){
+  try{
+    const r = await fetch(`${API}/toggle-defense`);
+    const d = await r.json();
+    addLog(`Control: defense ${d.defense?"ENABLED":"DISABLED"}`, d.defense?"def":"warn");
+  } catch{ addLog("⚠ Could not reach server","warn"); }
+}
+
+async function resetAll(){
+  try{
+    await fetch(`${API}/reset`);
+    prevTotal = 0;
+    snapshots = { normal:null, flash:null, attack:null, defense:null };
+    rpsChart.data.labels=[];
+    rpsChart.data.datasets[0].data=[];
+    rpsChart.data.datasets[1].data=[];
+    rpsChart.update();
+    clearLog();
+    addLog("Stats reset — ready for fresh demo","ok");
+  } catch{ addLog("⚠ Could not reach server","warn"); }
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+addLog("Dashboard ready — connect server on port 5000, then run simulations","info");
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>
